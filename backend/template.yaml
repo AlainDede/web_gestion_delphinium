@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Backend serverless pour le site de la copropriété Delphinium
+
+Parameters:
+  CognitoUserPoolId:
+    Type: String
+    Description: ID du User Pool Cognito
+  CognitoClientId:
+    Type: String
+    Description: ID du App Client Cognito
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.11
+    Environment:
+      Variables:
+        COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+        COGNITO_CLIENT_ID: !Ref CognitoClientId
+
+Resources:
+  # API Gateway
+  DelphiniumApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  # Lambda d'authentification
+  LoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: auth/
+      Handler: login.lambda_handler
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - cognito-idp:InitiateAuth
+            Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DelphiniumApi
+            Path: /auth/login
+            Method: post
+
+  # Lambda pour récupérer les infos utilisateur
+  GetUserInfoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: auth/
+      Handler: get_user_info.lambda_handler
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - cognito-idp:AdminGetUser
+              - cognito-idp:AdminListGroupsForUser
+            Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+      Events:
+        GetUserInfo:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DelphiniumApi
+            Path: /auth/user
+            Method: get
+
+  # Table DynamoDB pour le newsgroup
+  NewsgroupTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: delphinium-newsgroup
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: threadId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: threadId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+
+  # Table DynamoDB pour le blog
+  BlogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: delphinium-blog
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: postId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: postId
+          KeyType: HASH
+        - AttributeName: createdAt
+          KeyType: RANGE
+
+  # Table DynamoDB pour le calendrier
+  CalendarTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: delphinium-calendar
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: eventId
+          AttributeType: S
+        - AttributeName: eventDate
+          AttributeType: S
+      KeySchema:
+        - AttributeName: eventId
+          KeyType: HASH
+        - AttributeName: eventDate
+          KeyType: RANGE
+
+  # Table DynamoDB pour les incidents
+  IncidentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: delphinium-incidents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: incidentId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N
+      KeySchema:
+        - AttributeName: incidentId
+          KeyType: HASH
+        - AttributeName: createdAt
+          KeyType: RANGE
+
+  # Bucket S3 pour les documents
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'delphinium-documents-${AWS::AccountId}'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+            AllowedOrigins:
+              - '*'
+
+Outputs:
+  ApiUrl:
+    Description: URL de l'API Gateway
+    Value: !Sub 'https://${DelphiniumApi}.execute-api.${AWS::Region}.amazonaws.com/prod/'
+  DocumentsBucketName:
+    Description: Nom du bucket S3 pour les documents
+    Value: !Ref DocumentsBucket
+

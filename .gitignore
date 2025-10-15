@@ -1,0 +1,326 @@
+# Fichiers à ignorer lors du déploiement
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+
+# Backend
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.aws-sam/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environnement Python
+.venv/
+venv/
+*.egg-info/
+
+# Logs
+*.log
+
+# Secrets
+.env
+credentials.json
+# Site Web Copropriété Delphinium
+
+Site web complet pour la gestion de la copropriété Delphinium, avec authentification, gestion des rôles, et multiples sections fonctionnelles.
+
+## 🏗️ Architecture
+
+### Frontend
+- **Framework**: React 18
+- **UI Library**: Material-UI (MUI)
+- **Routing**: React Router v6
+- **Internationalisation**: react-i18next (Français, Néerlandais, Anglais)
+- **État**: React Hooks (useState, useEffect)
+
+### Backend
+- **Cloud Provider**: AWS
+- **Compute**: Lambda (Serverless)
+- **Authentification**: AWS Cognito
+- **Base de données**: DynamoDB (mode PAY_PER_REQUEST)
+- **Stockage**: S3 (pour les documents)
+- **API**: API Gateway REST
+- **Notifications**: SNS (optionnel)
+
+## 👥 Gestion des Rôles
+
+Le site supporte 4 niveaux d'accès via AWS Cognito :
+
+1. **superadmin** - Accès complet à toutes les fonctionnalités
+2. **admin** - Membres du conseil de copropriété (accès à la gestion d'incidents)
+3. **user** - Résidents de l'immeuble (accès aux sections communes)
+4. **service** - Sociétés de services (Syndic, maintenance, etc.)
+
+## 📋 Sections du Site
+
+### 1. **Newsgroup (Forum)**
+- Discussion ouverte entre tous les résidents
+- Création de threads et réponses
+- Affichage chronologique des discussions
+
+### 2. **Blog**
+- Actualités et annonces importantes
+- Publication réservée aux administrateurs
+- Lecture accessible à tous les utilisateurs connectés
+
+### 3. **Calendrier**
+- Affichage mensuel des événements
+- Navigation entre les mois
+- Ajout d'événements (admin uniquement)
+
+### 4. **Demande d'accès**
+- Formulaire multi-étapes pour nouveaux utilisateurs
+- Workflow de validation par les administrateurs
+- Notifications par email (optionnel)
+
+### 5. **Gestion d'incidents**
+- **Réservé aux administrateurs uniquement**
+- Création et suivi des incidents
+- Gestion des priorités et statuts
+- Historique et notes
+
+### 6. **Documentation**
+- Stockage sécurisé des documents sur S3
+- Catégorisation des documents
+- Recherche par nom, catégorie, description
+- Upload/téléchargement avec URLs présignées
+
+## 🚀 Installation et Déploiement
+
+### Prérequis
+
+```bash
+# Outils requis
+- Node.js 16+ et npm
+- Python 3.11+
+- AWS CLI configuré
+- AWS SAM CLI (pour le déploiement serverless)
+```
+
+### Étape 1: Configuration AWS Cognito
+
+```bash
+# Créer le User Pool
+aws cognito-idp create-user-pool \
+  --pool-name delphinium-users \
+  --policies "PasswordPolicy={MinimumLength=8,RequireUppercase=true,RequireLowercase=true,RequireNumbers=true}" \
+  --auto-verified-attributes email \
+  --username-attributes email
+
+# Noter le UserPoolId retourné
+
+# Créer le App Client
+aws cognito-idp create-user-pool-client \
+  --user-pool-id <USER_POOL_ID> \
+  --client-name delphinium-web \
+  --explicit-auth-flows ALLOW_USER_PASSWORD_AUTH ALLOW_REFRESH_TOKEN_AUTH \
+  --generate-secret false
+
+# Noter le ClientId retourné
+
+# Créer les groupes d'utilisateurs
+aws cognito-idp create-group --user-pool-id <USER_POOL_ID> --group-name superadmin
+aws cognito-idp create-group --user-pool-id <USER_POOL_ID> --group-name admin
+aws cognito-idp create-group --user-pool-id <USER_POOL_ID> --group-name user
+aws cognito-idp create-group --user-pool-id <USER_POOL_ID> --group-name service
+```
+
+### Étape 2: Déploiement du Backend
+
+```bash
+cd backend
+
+# Build et déploiement avec SAM
+sam build
+sam deploy --guided \
+  --parameter-overrides CognitoUserPoolId=<USER_POOL_ID> CognitoClientId=<CLIENT_ID>
+
+# Noter l'URL de l'API Gateway affichée dans les outputs
+```
+
+### Étape 3: Configuration du Frontend
+
+```bash
+cd frontend
+
+# Installer les dépendances
+npm install --legacy-peer-deps
+
+# Mettre à jour l'URL de l'API dans les composants
+# Remplacer 'YOUR_API_GATEWAY_URL' par l'URL obtenue à l'étape 2 dans:
+# - src/components/Login.js
+# - src/components/Newsgroup.js
+# - src/components/Blog.js
+# - src/components/Calendar.js
+# - src/components/IncidentManagement.js
+# - src/components/Documentation.js
+# - src/components/AccessRequest.js
+
+# Lancer le serveur de développement
+npm start
+
+# Build pour production
+npm run build
+```
+
+### Étape 4: Déploiement du Frontend sur S3
+
+```bash
+# Créer un bucket S3
+aws s3 mb s3://delphinium-frontend
+
+# Configurer le bucket pour le hosting web
+aws s3 website s3://delphinium-frontend --index-document index.html
+
+# Appliquer la policy de bucket public (voir bucket-policy.json)
+aws s3api put-bucket-policy --bucket delphinium-frontend --policy file://bucket-policy.json
+
+# Déployer le build
+cd frontend
+npm run build
+aws s3 sync build/ s3://delphinium-frontend/
+```
+
+### Étape 5: Créer les premiers utilisateurs
+
+```bash
+# Créer un superadmin
+aws cognito-idp admin-create-user \
+  --user-pool-id <USER_POOL_ID> \
+  --username admin@delphinium.be \
+  --user-attributes Name=email,Value=admin@delphinium.be \
+  --temporary-password TempPass123!
+
+# Ajouter au groupe superadmin
+aws cognito-idp admin-add-user-to-group \
+  --user-pool-id <USER_POOL_ID> \
+  --username admin@delphinium.be \
+  --group-name superadmin
+```
+
+## 🌐 Langues Supportées
+
+Le site est entièrement traduit en 3 langues :
+- 🇫🇷 Français (langue par défaut)
+- 🇳🇱 Néerlandais
+- 🇬🇧 Anglais
+
+Le changement de langue se fait via le sélecteur dans la barre de navigation.
+
+## 📁 Structure du Projet
+
+```
+website/
+├── frontend/                  # Application React
+│   ├── public/
+│   └── src/
+│       ├── components/        # Composants React
+│       │   ├── Login.js
+│       │   ├── Newsgroup.js
+│       │   ├── Blog.js
+│       │   ├── Calendar.js
+│       │   ├── IncidentManagement.js
+│       │   ├── Documentation.js
+│       │   └── AccessRequest.js
+│       ├── App.js            # Composant principal avec routing
+│       ├── i18n.js           # Configuration multilingue
+│       └── index.js          # Point d'entrée
+│
+├── backend/                   # Backend serverless AWS
+│   ├── auth/                 # Authentification Cognito
+│   │   ├── login.py
+│   │   ├── get_user_info.py
+│   │   ├── requirements.txt
+│   │   └── COGNITO_CONFIG.md
+│   ├── newsgroup/            # Forum de discussion
+│   │   ├── threads.py
+│   │   └── replies.py
+│   ├── blog/                 # Blog d'actualités
+│   │   └── posts.py
+│   ├── calendar/             # Calendrier des événements
+│   │   └── events.py
+│   ├── incidents/            # Gestion des incidents
+│   │   └── incidents.py
+│   ├── docs/                 # Gestion documentaire
+│   │   └── documents.py
+│   ├── access_request.py     # Demandes d'accès
+│   ├── template.yaml         # Template SAM
+│   └── README.md
+│
+├── DEPLOYMENT.md             # Guide de déploiement
+└── README.md                 # Ce fichier
+```
+
+## 🔒 Sécurité
+
+- **Authentification**: JWT tokens via AWS Cognito
+- **Autorisation**: Vérification des rôles côté backend (à implémenter complètement)
+- **CORS**: Configuré sur API Gateway
+- **HTTPS**: Recommandé via CloudFront + ACM
+- **Tokens**: Stockage sécurisé dans localStorage avec expiration
+
+## 💰 Estimation des Coûts AWS
+
+Pour une copropriété de taille moyenne (~50-100 utilisateurs actifs) :
+
+| Service | Coût estimé |
+|---------|-------------|
+| AWS Cognito | Gratuit (< 50k MAU) |
+| Lambda | ~1-2€/mois |
+| DynamoDB | ~2-5€/mois |
+| S3 | ~1-2€/mois |
+| API Gateway | ~2-3€/mois |
+| **Total** | **~5-15€/mois** |
+
+## 🛠️ Développement
+
+### Lancer le frontend en mode développement
+
+```bash
+cd frontend
+npm start
+```
+
+Le site sera accessible sur http://localhost:3000
+
+### Tester localement avec SAM
+
+```bash
+cd backend
+sam build
+sam local start-api
+```
+
+L'API locale sera accessible sur http://localhost:3000
+
+## 📝 TODO / Améliorations Futures
+
+- [ ] Ajouter la vérification JWT complète dans toutes les Lambda
+- [ ] Implémenter l'édition/suppression des posts/threads
+- [ ] Ajouter un système de notifications en temps réel
+- [ ] Implémenter la recherche avancée
+- [ ] Ajouter des graphiques/statistiques (dashboard admin)
+- [ ] Mettre en place des tests unitaires et d'intégration
+- [ ] Configurer CI/CD avec GitHub Actions ou AWS CodePipeline
+- [ ] Ajouter la gestion des pièces jointes dans les threads
+- [ ] Implémenter un système de votes pour les décisions
+
+## 📧 Support
+
+Pour toute question ou problème, contactez l'administrateur système de la copropriété.
+
+## 📄 Licence
+
+Propriété de la Copropriété Delphinium - Usage interne uniquement.
+
